@@ -5,19 +5,17 @@ import SwiftUI
 import ZippFoundation
 
 @MainActor
-protocol TravelViewModelDelegate: AnyObject {
+protocol MapViewModelDelegate: AnyObject {
+    func mapViewModelDidBeginDragging(_ viewModel: MapViewModel)
 }
 
 @MainActor
-final class TravelViewModel: ObservableObject {
-
-    static let collapsedDetent = PresentationDetent.height(110)
+final class MapViewModel: ObservableObject {
 
     @Published private(set) var userLocation: CLLocationCoordinate2D?
     @Published var cameraPosition = MapCameraPosition.automatic
-    @Published var sheetDetent = TravelViewModel.collapsedDetent
 
-    weak var delegate: TravelViewModelDelegate?
+    weak var delegate: MapViewModelDelegate?
 
     private let userLocationRepository: UserLocationRepositoryProtocol
 
@@ -41,6 +39,6 @@ final class TravelViewModel: ObservableObject {
     }
 
     func userDidBeginDraggingMap() {
-        sheetDetent = Self.collapsedDetent
+        delegate?.mapViewModelDidBeginDragging(self)
     }
 }

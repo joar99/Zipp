@@ -2,9 +2,9 @@ import MapKit
 import SwiftUI
 import ZippFoundation
 
-struct TravelView: View {
+struct MapView: View {
 
-    @ObservedObject var viewModel: TravelViewModel
+    @ObservedObject var viewModel: MapViewModel
     @State private var isDraggingMap = false
 
     var body: some View {
@@ -21,19 +21,9 @@ struct TravelView: View {
                         isDraggingMap = false
                     }
             )
-            .sheet(isPresented: .constant(true)) {
-                EmptyView()
-                    .presentationDetents(
-                        [TravelViewModel.collapsedDetent, .medium, .large],
-                        selection: $viewModel.sheetDetent
-                    )
-                    .presentationBackgroundInteraction(.enabled)
-                    .presentationDragIndicator(.visible)
-                    .interactiveDismissDisabled()
-            }
     }
 }
 
 #Preview {
-    TravelView(viewModel: TravelViewModel(userLocationRepository: UserLocationRepository()))
+    MapView(viewModel: MapViewModel(userLocationRepository: UserLocationRepository()))
 }

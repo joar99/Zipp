@@ -1,8 +1,11 @@
 import SwiftUI
 
 public extension View {
-    func applyModal(presentedModal: Binding<PresentedModal?>) -> some View {
-        let modal = Binding<PresentedModal?>(
+    func applyModal(
+        presentedModal: Binding<PresentedModal?>,
+        presentedModalDetent: Binding<PresentationDetent>
+    ) -> some View {
+        let sheet = Binding<PresentedModal?>(
             get: { presentedModal.wrappedValue?.isFullScreen == false ? presentedModal.wrappedValue : nil },
             set: { newValue in
                 presentedModal.wrappedValue = newValue
@@ -17,16 +20,31 @@ public extension View {
         )
 
         return self
-            .sheet(item: modal) { item in
+            .sheet(item: sheet) { item in
                 NavigationStack {
                     item.view
                 }
+                .applyingSheetConfiguration(item.sheetConfiguration, detent: presentedModalDetent)
             }
             .fullScreenCover(item: fullScreen) { item in
                 NavigationStack {
                     item.view
                 }
             }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applyingSheetConfiguration(_ configuration: SheetConfiguration?, detent: Binding<PresentationDetent>) -> some View {
+        if let configuration {
+            self
+                .presentationDetents(configuration.detents, selection: detent)
+                .presentationBackgroundInteraction(configuration.backgroundInteractionEnabled ? .enabled : .automatic)
+                .interactiveDismissDisabled(!configuration.isDismissable)
+        } else {
+            self
+        }
     }
 }
 

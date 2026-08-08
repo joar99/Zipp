@@ -15,7 +15,10 @@ public struct NavigationControllerPresenter: View {
                 .navigationDestination(for: NavigableView.self) { navigableView in
                     navigableView.view
                         .applyAlert(presentedAlert: $navigationController.presentedAlert)
-                        .applyModal(presentedModal: $navigationController.presentedModal)
+                        .applyModal(
+                            presentedModal: $navigationController.presentedModal,
+                            presentedModalDetent: $navigationController.presentedModalDetent
+                        )
                         .navigationBarBackButtonHidden(navigableView.isRoot)
                         .disablesInteractivePopGesture(navigableView.isRoot)
                 }
@@ -31,6 +34,7 @@ public final class NavigationController: ObservableObject {
 
     @Published public var navigationPath = NavigationPath()
     @Published public var presentedModal: PresentedModal?
+    @Published public var presentedModalDetent: PresentationDetent = .medium
     @Published public var presentedAlert: PresentedAlert?
 
     private var wrappers: [NavigableView] = []
@@ -63,8 +67,13 @@ public final class NavigationController: ObservableObject {
         navigationPath.append(root)
     }
 
-    public func presentModal<V: View>(_ view: V, fullScreen: Bool = false) {
-        presentedModal = fullScreen ? .fullScreen(AnyView(view)) : .modal(AnyView(view))
+    public func presentModal<V: View>(_ view: V, configuration: SheetConfiguration = SheetConfiguration()) {
+        presentedModalDetent = configuration.detents.first ?? .medium
+        presentedModal = .sheet(AnyView(view), configuration)
+    }
+
+    public func presentFullScreenModal<V: View>(_ view: V) {
+        presentedModal = .fullScreen(AnyView(view))
     }
 
     public func dismissModal() {
