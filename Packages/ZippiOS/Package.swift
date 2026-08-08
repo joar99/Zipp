@@ -10,8 +10,9 @@ let package = Package(
     dependencies: [
         .package(path: "../ZippNavigation"),
         .package(path: "../ZippFoundation"),
+        .package(path: "../ZippData"),
     ],
     targets: [
-        .target(name: "ZippiOS", dependencies: ["ZippNavigation", "ZippFoundation"]),
+        .target(name: "ZippiOS", dependencies: ["ZippNavigation", "ZippFoundation", "ZippData"]),
     ]
 )

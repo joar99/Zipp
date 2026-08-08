@@ -10,6 +10,8 @@
 		8217B1CB4AA474B021DEF9FB /* ZippNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = 645EEDC078278CB35E55D124 /* ZippNavigation */; };
 		8EF696D87E21652F3BD031E3 /* ZippFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EBB0CB0E316798BFA405F277 /* ZippFoundation */; };
 		D4305E7723D294B617EEFA1A /* ZippiOS in Frameworks */ = {isa = PBXBuildFile; productRef = 749B7D94988779CEA6AFD92A /* ZippiOS */; };
+		238A73A368763EC189E66C9E /* ZippNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = BD4499A5893568CF9DB22451 /* ZippNetworking */; };
+		34CD98E46B6241238B68596F /* ZippData in Frameworks */ = {isa = PBXBuildFile; productRef = 90CC22630C5E634741E2146D /* ZippData */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +34,8 @@
 				8217B1CB4AA474B021DEF9FB /* ZippNavigation in Frameworks */,
 				D4305E7723D294B617EEFA1A /* ZippiOS in Frameworks */,
 				8EF696D87E21652F3BD031E3 /* ZippFoundation in Frameworks */,
+				238A73A368763EC189E66C9E /* ZippNetworking in Frameworks */,
+				34CD98E46B6241238B68596F /* ZippData in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +81,8 @@
 				645EEDC078278CB35E55D124 /* ZippNavigation */,
 				749B7D94988779CEA6AFD92A /* ZippiOS */,
 				EBB0CB0E316798BFA405F277 /* ZippFoundation */,
+				BD4499A5893568CF9DB22451 /* ZippNetworking */,
+				90CC22630C5E634741E2146D /* ZippData */,
 			);
 			productName = Zipp;
 			productReference = 78ACC24F3017E27600A4B107 /* Zipp.app */;
@@ -110,6 +116,8 @@
 				3EAA9B76E89751B601D0C9DF /* XCLocalSwiftPackageReference "Packages/ZippNavigation" */,
 				874ED7D723F9637832246483 /* XCLocalSwiftPackageReference "Packages/ZippiOS" */,
 				11B50A4B40D448E4BBB54BE9 /* XCLocalSwiftPackageReference "Packages/ZippFoundation" */,
+				1EAC7A60E1E92184631A8006 /* XCLocalSwiftPackageReference "Packages/ZippNetworking" */,
+				54610BC7DFC3C76A2BF45316 /* XCLocalSwiftPackageReference "Packages/ZippData" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 78ACC2503017E27600A4B107 /* Products */;
@@ -363,6 +371,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/ZippiOS;
 		};
+		1EAC7A60E1E92184631A8006 /* XCLocalSwiftPackageReference "Packages/ZippNetworking" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ZippNetworking;
+		};
+		54610BC7DFC3C76A2BF45316 /* XCLocalSwiftPackageReference "Packages/ZippData" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ZippData;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -377,6 +393,14 @@
 		EBB0CB0E316798BFA405F277 /* ZippFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ZippFoundation;
+		};
+		BD4499A5893568CF9DB22451 /* ZippNetworking */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ZippNetworking;
+		};
+		90CC22630C5E634741E2146D /* ZippData */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ZippData;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
