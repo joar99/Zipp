@@ -63,7 +63,11 @@ final class MapViewModel: ObservableObject {
         delegate?.mapViewModelDidBeginDragging(self)
     }
 
-    func mapCameraDidChange(region: MKCoordinateRegion, distance: CLLocationDistance) {
+    func mapCameraDidChange(
+        region: MKCoordinateRegion,
+        distance: CLLocationDistance,
+        viewportSize: CGSize
+    ) {
         let detail = Self.annotationDetail(forCameraDistance: distance)
         logger.debug("camera \(Int(distance))m -> \(String(describing: detail), privacy: .public)")
 
@@ -74,7 +78,7 @@ final class MapViewModel: ObservableObject {
             return
         }
 
-        loadVisibleStopPlaces(in: region, detail: detail)
+        loadVisibleStopPlaces(in: region, detail: detail, viewportSize: viewportSize)
     }
 }
 
@@ -86,7 +90,11 @@ private extension MapViewModel {
     /// one per frame, short enough to feel immediate when the map settles.
     static let cameraSettleDelay = Duration.milliseconds(150)
 
-    func loadVisibleStopPlaces(in region: MKCoordinateRegion, detail: AnnotationDetail) {
+    func loadVisibleStopPlaces(
+        in region: MKCoordinateRegion,
+        detail: AnnotationDetail,
+        viewportSize: CGSize
+    ) {
         visibleStopsTask?.cancel()
         visibleStopsTask = Task { [weak self, stopPlaceRepository] in
             try? await Task.sleep(for: Self.cameraSettleDelay)
@@ -107,7 +115,9 @@ private extension MapViewModel {
             let decimated = Self.decimated(
                 stopPlaces,
                 in: region,
-                limit: Self.renderBudget(for: detail)
+                limit: Self.renderBudget(for: detail),
+                minimumSpacing: Self.footprint(for: detail),
+                viewportSize: viewportSize
             )
             logger.debug("\(stopPlaces.count) in bounds -> \(decimated.count) rendered")
 
@@ -155,27 +165,55 @@ private extension MapViewModel {
         }
     }
 
+    /// Roughly how much room one annotation needs, in points, including breathing
+    /// space. The plate is generous on width because it sizes itself to the stop's
+    /// name, and a long name like "Van Cortlandt Park-242 St" is far wider than a
+    /// short one.
+    static func footprint(for detail: AnnotationDetail) -> CGSize {
+        switch detail {
+        case .hidden: .zero
+        case .dot: CGSize(width: 26, height: 26)
+        case .label: CGSize(width: 190, height: 40)
+        }
+    }
+
     /// Thins a dense set of stops down to something drawable, keeping at most one
     /// per grid cell.
     ///
+    /// Cell size is the larger of two constraints:
+    ///
+    /// 1. **the render budget** — enough cells to fill it, and no more;
+    /// 2. **the annotation's own size** — a cell narrower than the thing drawn in
+    ///    it guarantees neighbours overlap, which is what a purely budget-derived
+    ///    grid did: 60 plates over a phone screen makes ~80pt cells for annotations
+    ///    that are twice that wide.
+    ///
     /// The grid is anchored to absolute coordinates rather than to the visible
-    /// region, so panning does not reshuffle which stop wins a cell. Together
-    /// with a deterministic tie-break that keeps the selection stable frame to
-    /// frame, which is what stops annotations flickering in and out as the map
-    /// moves.
+    /// region, so panning does not reshuffle which stop wins a cell. Together with
+    /// a deterministic tie-break, that is what stops annotations flickering in and
+    /// out as the map moves.
     static func decimated(
         _ stopPlaces: [StopPlace],
         in region: MKCoordinateRegion,
-        limit: Int
+        limit: Int,
+        minimumSpacing: CGSize,
+        viewportSize: CGSize
     ) -> [StopPlace] {
-        guard stopPlaces.count > limit else { return stopPlaces }
+        guard !stopPlaces.isEmpty else { return [] }
 
         let aspectRatio = max(region.span.longitudeDelta / max(region.span.latitudeDelta, .leastNonzeroMagnitude), 0.1)
         let columns = max(1, Int((Double(limit) * aspectRatio).squareRoot().rounded()))
         let rows = max(1, limit / columns)
 
-        let cellWidth = region.span.longitudeDelta / Double(columns)
-        let cellHeight = region.span.latitudeDelta / Double(rows)
+        var cellWidth = region.span.longitudeDelta / Double(columns)
+        var cellHeight = region.span.latitudeDelta / Double(rows)
+
+        // Convert the annotation's footprint from points into degrees and use it
+        // as a floor, so cells are never smaller than what they hold.
+        if viewportSize.width > 0, viewportSize.height > 0 {
+            cellWidth = max(cellWidth, region.span.longitudeDelta * (minimumSpacing.width / viewportSize.width))
+            cellHeight = max(cellHeight, region.span.latitudeDelta * (minimumSpacing.height / viewportSize.height))
+        }
         guard cellWidth > 0, cellHeight > 0 else { return Array(stopPlaces.prefix(limit)) }
 
         struct Cell: Hashable {

@@ -8,6 +8,12 @@ struct MapView: View {
     @State private var isDraggingMap = false
 
     var body: some View {
+        GeometryReader { proxy in
+            map(viewportSize: proxy.size)
+        }
+    }
+
+    private func map(viewportSize: CGSize) -> some View {
         Map(position: $viewModel.cameraPosition) {
             ForEach(viewModel.visibleStopPlaces) { stopPlace in
                 Annotation(coordinate: stopPlace.coordinate) {
@@ -22,7 +28,10 @@ struct MapView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             viewModel.mapCameraDidChange(
                 region: context.region,
-                distance: context.camera.distance
+                distance: context.camera.distance,
+                // Needed to convert an annotation's size in points into degrees,
+                // which is what stops labels being packed closer than they are wide.
+                viewportSize: viewportSize
             )
         }
         .simultaneousGesture(
