@@ -15,6 +15,9 @@ struct StopPlaceAnnotation: View {
     private var tint: Color { stopPlace.kind.tint }
 
     var body: some View {
+        // MEASUREMENT — temporary, remove with AnnotationRenderCounter.
+        let _ = AnnotationRenderCounter.record(detail)
+
         switch detail {
         case .hidden:
             EmptyView()

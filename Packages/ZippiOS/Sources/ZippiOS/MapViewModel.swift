@@ -112,6 +112,9 @@ private extension MapViewModel {
             }
             guard !Task.isCancelled, let self else { return }
 
+            // MEASUREMENT — temporary scaffolding, remove once caching is decided.
+            let clock = ContinuousClock()
+            let decimateStarted = clock.now
             let decimated = Self.decimated(
                 stopPlaces,
                 in: region,
@@ -119,7 +122,7 @@ private extension MapViewModel {
                 minimumSpacing: Self.footprint(for: detail),
                 viewportSize: viewportSize
             )
-            logger.debug("\(stopPlaces.count) in bounds -> \(decimated.count) rendered")
+            let decimateFinished = clock.now
 
             // Detail and contents move together. Applying the detail change
             // early would briefly render a dot-sized crowd as full plates, which
@@ -129,8 +132,30 @@ private extension MapViewModel {
             }
             // Re-assigning an identical list makes SwiftUI diff every annotation
             // for no visual change.
-            guard decimated.map(\.id) != self.visibleStopPlaces.map(\.id) else { return }
+            guard decimated.map(\.id) != self.visibleStopPlaces.map(\.id) else {
+                print("SWTOR unchanged set, skipped redraw")
+                return
+            }
+
+            _ = AnnotationRenderCounter.drain()
+            let handoff = clock.now
             self.visibleStopPlaces = decimated
+
+            print("""
+                SWTOR decimate=\(decimateStarted.duration(to: decimateFinished).milliseconds)ms \
+                in=\(stopPlaces.count) out=\(decimated.count) detail=\(detail)
+                """)
+
+            // SwiftUI builds annotation bodies after this assignment returns, so
+            // the count is only meaningful once the run loop has drained.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                let built = AnnotationRenderCounter.drain()
+                print("""
+                    SWTOR bodiesBuilt dots=\(built.dots) labels=\(built.labels) \
+                    sinceHandoff=\(handoff.duration(to: ContinuousClock().now).milliseconds)ms
+                    """)
+            }
         }
     }
 }

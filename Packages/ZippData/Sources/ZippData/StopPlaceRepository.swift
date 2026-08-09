@@ -24,6 +24,14 @@ public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
     private let service: any StopPlaceServicing
     private let feeds: [GTFSFeed]
 
+    /// Every platform in the dataset, keyed by its parent's qualified id.
+    ///
+    /// Held in memory because it is small, entirely static between refreshes, and
+    /// needed by every single read. Rebuilding it per query cost ~30 ms whether the
+    /// caller wanted 13 stops or 509 — three quarters of the time it took the map
+    /// to settle. Invalidated by ``refresh(minimumInterval:)`` and nothing else.
+    private var platformCache: [String: [Platform]]?
+
     public init(
         modelContainer: ModelContainer,
         service: any StopPlaceServicing = StopPlaceService(),
@@ -63,7 +71,21 @@ public extension StopPlaceRepository {
             }
         )
         descriptor.fetchLimit = limit
-        return try assemble(try modelContext.fetch(descriptor).map(\.record))
+
+        // MEASUREMENT — temporary, remove once the caching question is settled.
+        let clock = ContinuousClock()
+        let started = clock.now
+        let records = try modelContext.fetch(descriptor).map(\.record)
+        let fetched = clock.now
+        let assembled = try assemble(records)
+        let finished = clock.now
+
+        print("""
+            SWTOR fetch=\(started.duration(to: fetched).milliseconds)ms \
+            assemble=\(fetched.duration(to: finished).milliseconds)ms \
+            rows=\(records.count) places=\(assembled.count)
+            """)
+        return assembled
     }
 
     func stopPlace(id: String) throws -> StopPlace? {
@@ -97,7 +119,12 @@ private extension StopPlaceRepository {
     /// Platforms are fetched for all the given rows in one query rather than per
     /// stop, since the map asks for hundreds at a time.
     func assemble(_ records: [StopPlaceRecord]) throws -> [StopPlace] {
+        // MEASUREMENT — temporary. The platform lookup fetches every platform row
+        // in the dataset on each call, which is the prime suspect for settle lag.
+        let clock = ContinuousClock()
+        let started = clock.now
         let platformsByParent = try platformsByParentID()
+        print("SWTOR   platformLookup=\(started.duration(to: clock.now).milliseconds)ms stations=\(platformsByParent.count)")
 
         return records.compactMap { record in
             let kind = StopPlace.Kind.make(
@@ -131,6 +158,8 @@ private extension StopPlaceRepository {
     /// predicate matching parent identifiers against a captured collection, which
     /// also required unwrapping an optional inside `#Predicate`.
     func platformsByParentID() throws -> [String: [Platform]] {
+        if let platformCache { return platformCache }
+
         let children = try modelContext.fetch(
             FetchDescriptor<StopPlaceEntity>(
                 predicate: #Predicate { $0.parentStationID != nil }
@@ -148,6 +177,7 @@ private extension StopPlaceRepository {
         for key in result.keys {
             result[key]?.sort { $0.id < $1.id }
         }
+        platformCache = result
         return result
     }
 }
@@ -229,6 +259,12 @@ public extension StopPlaceRepository {
             try modelContext.save()
         } catch {
             logger.error("Saving refreshed stops failed, \(error, privacy: .public)")
+        }
+
+        // The only thing that can change the platform layout is a refresh that
+        // actually touched rows, so this is the single invalidation point.
+        if counts.didChange {
+            platformCache = nil
         }
 
         let storedCount = (try? numberOfStopPlaces()) ?? -1
