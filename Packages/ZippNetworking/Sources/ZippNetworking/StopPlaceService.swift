@@ -5,7 +5,7 @@ import ZippFoundation
 public enum StopPlaceFetchOutcome: Sendable {
     /// The feed is byte for byte what we already hold; nothing was transferred.
     case unchanged
-    case updated(entityTag: String?, stopPlaces: [StopPlace])
+    case updated(entityTag: String?, records: [StopPlaceRecord])
 }
 
 public protocol StopPlaceServicing: Sendable {
@@ -43,8 +43,8 @@ public struct StopPlaceService: StopPlaceServicing {
         }
 
         let data = try await reader.data(forEntry: "stops.txt", in: feed.url)
-        let stopPlaces = GTFSStopsDecoder.decode(data, feedID: feed.id)
-        return .updated(entityTag: entityTag, stopPlaces: stopPlaces)
+        let records = GTFSStopsDecoder.decode(data, feedID: feed.id)
+        return .updated(entityTag: entityTag, records: records)
     }
 
     public func fetchStopPlaces(

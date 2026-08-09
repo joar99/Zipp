@@ -1,8 +1,11 @@
 import Combine
 import CoreLocation
 import MapKit
+import OSLog
 import SwiftUI
 import ZippFoundation
+
+private let logger = Logger(subsystem: "no.jonas.Zipp", category: "MapViewModel")
 
 @MainActor
 protocol MapViewModelDelegate: AnyObject {
@@ -62,6 +65,7 @@ final class MapViewModel: ObservableObject {
 
     func mapCameraDidChange(region: MKCoordinateRegion, distance: CLLocationDistance) {
         let detail = Self.annotationDetail(forCameraDistance: distance)
+        logger.debug("camera \(Int(distance))m -> \(String(describing: detail), privacy: .public)")
 
         guard detail != .hidden else {
             visibleStopsTask?.cancel()
@@ -89,7 +93,15 @@ private extension MapViewModel {
             guard !Task.isCancelled else { return }
 
             let bounds = CoordinateBounds(region: region)
-            guard let stopPlaces = try? await stopPlaceRepository.stopPlaces(in: bounds) else { return }
+            let stopPlaces: [StopPlace]
+            do {
+                stopPlaces = try await stopPlaceRepository.stopPlaces(in: bounds)
+            } catch {
+                // Swallowing this silently once cost an afternoon: the map simply
+                // drew nothing while the store was fine and the fetch was throwing.
+                logger.error("Loading stop places failed, \(error, privacy: .public)")
+                return
+            }
             guard !Task.isCancelled, let self else { return }
 
             let decimated = Self.decimated(
@@ -97,6 +109,7 @@ private extension MapViewModel {
                 in: region,
                 limit: Self.renderBudget(for: detail)
             )
+            logger.debug("\(stopPlaces.count) in bounds -> \(decimated.count) rendered")
 
             // Detail and contents move together. Applying the detail change
             // early would briefly render a dot-sized crowd as full plates, which
@@ -191,13 +204,25 @@ private extension MapViewModel {
             .sorted { $0.id < $1.id }
     }
 
-    /// Stations beat plain stops; ties break on identifier so the result never
+    /// Rail beats ferry beats bus, and ties break on identifier so the result never
     /// depends on the order the store happened to return rows in.
+    ///
+    /// A rail station is a better landmark than any one of the bus stops around
+    /// it, and there are nine bus stops for every rail station, so without this the
+    /// buses would crowd the stations out of their cells.
     static func outranks(_ lhs: StopPlace, _ rhs: StopPlace) -> Bool {
-        let lhsIsStation = lhs.kind == .station
-        let rhsIsStation = rhs.kind == .station
-        if lhsIsStation != rhsIsStation { return lhsIsStation }
+        let lhsRank = rank(lhs.kind)
+        let rhsRank = rank(rhs.kind)
+        if lhsRank != rhsRank { return lhsRank > rhsRank }
         return lhs.id < rhs.id
+    }
+
+    static func rank(_ kind: StopPlace.Kind) -> Int {
+        switch kind {
+        case .subway, .path: 2
+        case .ferry: 1
+        case .bus: 0
+        }
     }
 }
 

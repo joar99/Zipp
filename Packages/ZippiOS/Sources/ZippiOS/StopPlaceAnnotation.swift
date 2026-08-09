@@ -3,17 +3,16 @@ import ZippFoundation
 
 /// How a single stop draws itself on the map.
 ///
-/// Everything here is deliberately cheap. Hundreds of these are on screen at
-/// once and they are re-composited on every frame of a pan, so anything that
-/// forces an offscreen pass — a material, a shadow, a blur — costs that price
-/// hundreds of times per frame. Flat fills and strokes only.
+/// Everything here is deliberately cheap. Hundreds are on screen at once and they
+/// are re-composited on every frame of a pan, so anything forcing an offscreen
+/// pass — a material, a shadow, a blur — costs that price hundreds of times per
+/// frame. Flat fills and strokes only.
 struct StopPlaceAnnotation: View {
 
     let stopPlace: StopPlace
     let detail: MapViewModel.AnnotationDetail
 
-    private var modes: [TransportMode] { stopPlace.modes.sortedForDisplay }
-    private var tint: Color { stopPlace.modes.primary.tint }
+    private var tint: Color { stopPlace.kind.tint }
 
     var body: some View {
         switch detail {
@@ -26,8 +25,8 @@ struct StopPlaceAnnotation: View {
         }
     }
 
-    /// A duo-toned dot: the mode's colour, ringed so it stays legible against
-    /// both parks and water.
+    /// A duo-toned dot: the mode's colour, ringed so it stays legible against both
+    /// parks and water.
     private var dot: some View {
         Circle()
             .fill(tint)
@@ -39,13 +38,11 @@ struct StopPlaceAnnotation: View {
 
     private var plate: some View {
         HStack(spacing: 4) {
-            ForEach(modes, id: \.self) { mode in
-                Image(systemName: mode.symbolName)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 16, height: 16)
-                    .background(mode.tint, in: Circle())
-            }
+            Image(systemName: stopPlace.kind.symbolName)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(tint, in: Circle())
 
             Text(stopPlace.name)
                 .font(.system(size: 11, weight: .semibold))
@@ -77,12 +74,10 @@ struct StopPlaceAnnotation: View {
 
 private extension StopPlace {
     static let preview = StopPlace(
-        stopID: "127",
-        feedID: "subway",
+        id: "subway:127",
         name: "Times Sq-42 St",
         latitude: 40.75529,
         longitude: -73.987495,
-        kind: .station,
-        parentStationID: nil
+        kind: .subway([Platform(id: "127N"), Platform(id: "127S")])
     )
 }

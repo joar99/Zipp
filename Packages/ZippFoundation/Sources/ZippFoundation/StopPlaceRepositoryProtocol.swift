@@ -57,13 +57,11 @@ public protocol StopPlaceRepositoryProtocol: Sendable {
     /// station and would stack pins on top of each other.
     func stopPlaces(in bounds: CoordinateBounds, limit: Int?) async throws -> [StopPlace]
 
-    /// The platforms belonging to a station, for when a rider taps it.
+    /// A single stop place, assembled with its platforms.
     ///
-    /// Scoped to the station's own feed, since `parent_station` references are
-    /// only meaningful within the feed that published them.
-    func platforms(of station: StopPlace) async throws -> [StopPlace]
-
-    func stopPlace(stopID: String, feedID: String) async throws -> StopPlace?
+    /// `id` is the qualified form (`feed:stop`), since identifiers only mean
+    /// anything alongside the feed that issued them.
+    func stopPlace(id: String) async throws -> StopPlace?
 
     func numberOfStopPlaces() async throws -> Int
 

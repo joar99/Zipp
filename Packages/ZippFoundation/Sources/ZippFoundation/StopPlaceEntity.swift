@@ -1,18 +1,22 @@
 import SwiftData
 
-/// The persisted form of a ``StopPlace``.
+/// The persisted form of a ``StopPlaceRecord``.
 ///
-/// Instances stay bound to the `ModelContext` that created them, so they are
-/// never handed across module boundaries. Callers exchange ``StopPlace`` values
-/// instead and let the owning repository map between the two.
+/// Storage is **flat**, mirroring how GTFS publishes it, rather than storing the
+/// assembled ``StopPlace`` tree. Rows arrive flat from the feeds and are merged
+/// row by row, so keeping them that way lets the incremental merge touch only what
+/// changed; the hierarchy is assembled on read instead.
+///
+/// Instances stay bound to the `ModelContext` that created them, so they never
+/// leave the repository. Callers exchange ``StopPlaceRecord`` and ``StopPlace``.
 @Model
 public final class StopPlaceEntity {
 
-    // Feeds number their stops independently, so `stopID` alone is not unique:
-    // constraining on it would make one operator's stop silently overwrite
-    // another's during a save.
+    // Feeds number their stops independently, so `stopID` alone is not unique —
+    // constraining on it made one operator's stop silently overwrite another's
+    // during a save, losing rows without an error.
     #Unique<StopPlaceEntity>([\.feedID, \.stopID])
-    #Index<StopPlaceEntity>([\.stopID], [\.feedID], [\.latitude, \.longitude])
+    #Index<StopPlaceEntity>([\.stopID], [\.feedID], [\.parentStationID], [\.latitude, \.longitude])
 
     public var stopID: String
     public var feedID: String
@@ -43,36 +47,36 @@ public final class StopPlaceEntity {
 
 public extension StopPlaceEntity {
 
-    convenience init(stopPlace: StopPlace) {
+    convenience init(record: StopPlaceRecord) {
         self.init(
-            stopID: stopPlace.stopID,
-            feedID: stopPlace.feedID,
-            name: stopPlace.name,
-            latitude: stopPlace.latitude,
-            longitude: stopPlace.longitude,
-            kindRawValue: stopPlace.kind.rawValue,
-            parentStationID: stopPlace.parentStationID
+            stopID: record.stopID,
+            feedID: record.feedID,
+            name: record.name,
+            latitude: record.latitude,
+            longitude: record.longitude,
+            kindRawValue: record.kind.rawValue,
+            parentStationID: record.parentStationID
         )
     }
 
-    /// Copies incoming values onto an already persisted stop, leaving its
-    /// identity intact.
-    func update(from stopPlace: StopPlace) {
-        name = stopPlace.name
-        latitude = stopPlace.latitude
-        longitude = stopPlace.longitude
-        kindRawValue = stopPlace.kind.rawValue
-        parentStationID = stopPlace.parentStationID
+    /// Copies incoming values onto an already stored row, leaving its identity
+    /// intact so the merge does not churn the store.
+    func update(from record: StopPlaceRecord) {
+        name = record.name
+        latitude = record.latitude
+        longitude = record.longitude
+        kindRawValue = record.kind.rawValue
+        parentStationID = record.parentStationID
     }
 
-    var stopPlace: StopPlace {
-        StopPlace(
+    var record: StopPlaceRecord {
+        StopPlaceRecord(
             stopID: stopID,
             feedID: feedID,
             name: name,
             latitude: latitude,
             longitude: longitude,
-            kind: StopPlaceKind(rawValue: kindRawValue) ?? .platform,
+            kind: StopPlaceRecord.Kind(rawValue: kindRawValue) ?? .platform,
             parentStationID: parentStationID
         )
     }

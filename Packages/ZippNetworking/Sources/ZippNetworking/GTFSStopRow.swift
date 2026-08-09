@@ -4,8 +4,8 @@ import ZippFoundation
 
 /// One row of a GTFS `stops.txt`, in the shape the feed publishes it.
 ///
-/// Intentionally not `public`: the wire format stops at this module's boundary,
-/// and callers only ever see the ``StopPlace`` it maps to.
+/// Intentionally not `public`: the wire format stops at this module's boundary and
+/// callers only ever see the ``StopPlaceRecord`` it maps to.
 struct GTFSStopRow: Sendable {
     let stopID: String
     let stopName: String
@@ -17,9 +17,9 @@ struct GTFSStopRow: Sendable {
 
 extension GTFSStopRow {
 
-    /// Maps a feed row onto the app's own model, discarding rows that cannot
-    /// be placed on a map.
-    func stopPlace(feedID: String) -> StopPlace? {
+    /// Maps a feed row onto a storable record, discarding rows that cannot be
+    /// placed on a map.
+    func record(feedID: String) -> StopPlaceRecord? {
         guard !stopID.isEmpty,
               let latitude = Double(stopLatitude),
               let longitude = Double(stopLongitude),
@@ -29,9 +29,9 @@ extension GTFSStopRow {
         else { return nil }
 
         // GTFS leaves `location_type` blank for ordinary boardable stops.
-        let kind = StopPlaceKind(rawValue: Int(locationType) ?? 0) ?? .platform
+        let kind = StopPlaceRecord.Kind(rawValue: Int(locationType) ?? 0) ?? .platform
 
-        return StopPlace(
+        return StopPlaceRecord(
             stopID: stopID,
             feedID: feedID,
             name: stopName,
@@ -43,15 +43,16 @@ extension GTFSStopRow {
     }
 }
 
-/// Turns the bytes of a `stops.txt` into model values.
+/// Turns the bytes of a `stops.txt` into storable records.
 enum GTFSStopsDecoder {
 
-    static func decode(_ data: Data, feedID: String) -> [StopPlace] {
+    static func decode(_ data: Data, feedID: String) -> [StopPlaceRecord] {
         let text = String(decoding: data, as: UTF8.self)
         var rows = DelimitedTextParser.rows(from: text)[...]
 
         guard let header = rows.popFirst() else { return [] }
-        // Column order is not guaranteed by the spec, so bind by name.
+        // Column order is not guaranteed by the spec, and the bus feeds carry
+        // three columns the subway feed does not, so bind by name.
         let columns = Dictionary(
             header.enumerated().map { index, name in
                 (name.trimmingCharacters(in: .whitespaces), index)
@@ -61,7 +62,8 @@ enum GTFSStopsDecoder {
 
         // Feeds pad their values inconsistently: the subway feed writes
         // `40.872562` while the bus feeds write `  40.872562`, and `Double.init`
-        // rejects the latter outright.
+        // rejects the latter outright. Trimming here once silently discarded
+        // every bus stop when it was missing.
         func value(_ fields: [String], _ column: String) -> String {
             guard let index = columns[column], index < fields.count else { return "" }
             return fields[index].trimmingCharacters(in: .whitespaces)
@@ -76,7 +78,7 @@ enum GTFSStopsDecoder {
                 locationType: value(fields, "location_type"),
                 parentStation: value(fields, "parent_station")
             )
-            .stopPlace(feedID: feedID)
+            .record(feedID: feedID)
         }
     }
 }

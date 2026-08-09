@@ -6,12 +6,16 @@ import ZippNetworking
 
 private let logger = Logger(subsystem: "no.jonas.Zipp", category: "StopPlaceRepository")
 
-/// Owns local storage of transit stops, and keeps it in step with the published
+/// Owns local storage of transit stops and keeps it in step with the published
 /// feeds.
 ///
-/// Conformance to `ModelActor` is written out by hand rather than using the
-/// `@ModelActor` macro, because the macro generates an initialiser that takes
-/// only a container and leaves no room to inject the networking service.
+/// Storage is flat — one row per published stop — while callers receive assembled
+/// ``StopPlace`` values. The two shapes serve different masters: feeds publish rows
+/// and are merged row by row, but riders think in stop places.
+///
+/// Conformance to `ModelActor` is written by hand rather than using the
+/// `@ModelActor` macro, because that macro generates an initialiser taking only a
+/// container and leaves no room to inject the networking service.
 public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
 
     public nonisolated let modelContainer: ModelContainer
@@ -38,6 +42,11 @@ public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
 
 public extension StopPlaceRepository {
 
+    /// Stop places within `bounds`, each assembled with its platforms.
+    ///
+    /// Only rows without a parent are returned. Child platforms share their
+    /// station's exact coordinate, so drawing them would stack every one of them
+    /// on a single pixel.
     func stopPlaces(in bounds: CoordinateBounds, limit: Int? = nil) throws -> [StopPlace] {
         let minimumLatitude = bounds.minimumLatitude
         let maximumLatitude = bounds.maximumLatitude
@@ -54,33 +63,92 @@ public extension StopPlaceRepository {
             }
         )
         descriptor.fetchLimit = limit
-        return try modelContext.fetch(descriptor).map(\.stopPlace)
+        return try assemble(try modelContext.fetch(descriptor).map(\.record))
     }
 
-    func platforms(of station: StopPlace) throws -> [StopPlace] {
-        let stationID = station.stopID
-        let feedID = station.feedID
-        let descriptor = FetchDescriptor<StopPlaceEntity>(
-            predicate: #Predicate { entity in
-                entity.parentStationID == stationID && entity.feedID == feedID
-            },
-            sortBy: [SortDescriptor(\.stopID)]
-        )
-        return try modelContext.fetch(descriptor).map(\.stopPlace)
-    }
+    func stopPlace(id: String) throws -> StopPlace? {
+        // The qualified identifier is `feed:stop`, and a stop identifier may itself
+        // contain no colon, so splitting once from the left is unambiguous.
+        let parts = id.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let feedID = String(parts[0])
+        let stopID = String(parts[1])
 
-    func stopPlace(stopID: String, feedID: String) throws -> StopPlace? {
         var descriptor = FetchDescriptor<StopPlaceEntity>(
-            predicate: #Predicate { entity in
-                entity.stopID == stopID && entity.feedID == feedID
-            }
+            predicate: #Predicate { $0.stopID == stopID && $0.feedID == feedID }
         )
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first?.stopPlace
+        guard let record = try modelContext.fetch(descriptor).first?.record else { return nil }
+        return try assemble([record]).first
     }
 
     func numberOfStopPlaces() throws -> Int {
         try modelContext.fetchCount(FetchDescriptor<StopPlaceEntity>())
+    }
+}
+
+// MARK: - Assembling the facade
+
+private extension StopPlaceRepository {
+
+    /// Turns flat rows into ``StopPlace`` values, attaching each station's
+    /// platforms.
+    ///
+    /// Platforms are fetched for all the given rows in one query rather than per
+    /// stop, since the map asks for hundreds at a time.
+    func assemble(_ records: [StopPlaceRecord]) throws -> [StopPlace] {
+        let platformsByParent = try platformsByParentID()
+
+        return records.compactMap { record in
+            let kind = StopPlace.Kind.make(
+                feedID: record.feedID,
+                // Bus and ferry have no station layer, so the stop is its own
+                // single platform.
+                ownPlatform: Platform(id: record.id),
+                childPlatforms: platformsByParent[record.id] ?? []
+            )
+            guard let kind else {
+                // Only reachable if a feed is added to the catalogue without
+                // teaching `Kind` about it. Skipping beats guessing a mode.
+                logger.error("Unrecognised feed \(record.feedID, privacy: .public); skipping stop \(record.id, privacy: .public)")
+                return nil
+            }
+            return StopPlace(
+                id: record.id,
+                name: record.name,
+                latitude: record.latitude,
+                longitude: record.longitude,
+                kind: kind
+            )
+        }
+    }
+
+    /// Every platform row, keyed by its parent's qualified id.
+    ///
+    /// Fetched wholesale rather than narrowed to the stops being assembled. Only
+    /// subway and PATH have platforms at all — 1,021 rows across the entire
+    /// dataset — so the whole set is cheaper than asking SwiftData to translate a
+    /// predicate matching parent identifiers against a captured collection, which
+    /// also required unwrapping an optional inside `#Predicate`.
+    func platformsByParentID() throws -> [String: [Platform]] {
+        let children = try modelContext.fetch(
+            FetchDescriptor<StopPlaceEntity>(
+                predicate: #Predicate { $0.parentStationID != nil }
+            )
+        )
+
+        var result: [String: [Platform]] = [:]
+        for child in children {
+            guard let parentStationID = child.parentStationID else { continue }
+            // Parent references only mean anything inside their own feed, so the
+            // key is qualified to avoid crossing operators that reuse identifiers.
+            result["\(child.feedID):\(parentStationID)", default: []]
+                .append(Platform(id: child.stopID))
+        }
+        for key in result.keys {
+            result[key]?.sort { $0.id < $1.id }
+        }
+        return result
     }
 }
 
@@ -127,13 +195,13 @@ public extension StopPlaceRepository {
                 logger.debug("\(feedID, privacy: .public): unchanged upstream")
                 touched.append(FeedOutcome(feedID: feedID, entityTag: nil, didChange: false))
 
-            case let .success(.updated(entityTag, stopPlaces)):
+            case let .success(.updated(entityTag, records)):
                 do {
-                    let feedCounts = try merge(stopPlaces, feedID: feedID)
+                    let feedCounts = try merge(records, feedID: feedID)
                     counts.formUnion(feedCounts)
                     logger.info(
                         """
-                        \(feedID, privacy: .public): \(stopPlaces.count) stops fetched, \
+                        \(feedID, privacy: .public): \(records.count) stops fetched, \
                         +\(feedCounts.inserted) ~\(feedCounts.updated) -\(feedCounts.removed)
                         """
                     )
@@ -206,9 +274,9 @@ private extension StopPlaceRepository {
         let didChange: Bool
     }
 
-    /// Reconciles one feed's stops against what is already stored, touching only
-    /// the rows that actually differ.
-    func merge(_ stopPlaces: [StopPlace], feedID: String) throws -> MergeCounts {
+    /// Reconciles one feed's rows against what is stored, touching only what
+    /// actually differs.
+    func merge(_ records: [StopPlaceRecord], feedID: String) throws -> MergeCounts {
         let stored = try modelContext.fetch(
             FetchDescriptor<StopPlaceEntity>(predicate: #Predicate { $0.feedID == feedID })
         )
@@ -219,16 +287,16 @@ private extension StopPlaceRepository {
 
         var counts = MergeCounts()
 
-        for stopPlace in stopPlaces {
-            if let entity = storedByID.removeValue(forKey: stopPlace.stopID) {
-                // Only write when something actually differs, so an unchanged
-                // feed does not dirty 16,000 rows.
-                if entity.stopPlace != stopPlace {
-                    entity.update(from: stopPlace)
+        for record in records {
+            if let entity = storedByID.removeValue(forKey: record.stopID) {
+                // Only write when something differs, so an unchanged feed does not
+                // dirty 16,000 rows.
+                if entity.record != record {
+                    entity.update(from: record)
                     counts.updated += 1
                 }
             } else {
-                modelContext.insert(StopPlaceEntity(stopPlace: stopPlace))
+                modelContext.insert(StopPlaceEntity(record: record))
                 counts.inserted += 1
             }
         }

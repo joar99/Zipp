@@ -1,61 +1,97 @@
 import CoreLocation
 
-/// How a stop relates to the physical world, mirroring GTFS `location_type`.
-public enum StopPlaceKind: Int, Sendable, Codable, CaseIterable {
-    /// A boardable location. In GTFS this is a blank or `0` `location_type`.
-    case platform = 0
-    /// A parent station grouping one or more platforms.
-    case station = 1
-    /// A street level entrance or exit belonging to a station.
-    case entrance = 2
-    /// A pathway node with no boarding of its own.
-    case genericNode = 3
-    /// A specific spot on a platform where riders board.
-    case boardingArea = 4
-}
-
-/// A transit stop as the rest of the app understands it.
+/// A place a rider walks to and departs from — the thing we draw on the map.
 ///
-/// This is the value type that crosses module and concurrency boundaries. It is
-/// deliberately free of both the wire format it was decoded from and the
-/// persistence type it is stored as.
+/// What that *is* differs by mode, and the asymmetry comes from the data rather
+/// than from us: subway and PATH publish a station grouping several platforms,
+/// while bus and ferry publish the boarding point directly with no station layer
+/// above it. ``Kind`` carries that difference.
+///
+/// Deliberately not modelled here:
+/// - **Station complexes.** GTFS allows one level of `parent_station`, so what it
+///   calls a station is really one group of lines — Times Square is four of them,
+///   spread over 293 metres. The grouping lives in `transfers.txt`, but a complex
+///   has no name and half of them have members that disagree, so there is nothing
+///   to call the result.
+/// - **Several modes per stop.** A full route join found no stop serving more than
+///   one `route_type`, so ``Kind`` is singular rather than a set.
 public struct StopPlace: Sendable, Hashable, Identifiable {
 
-    /// The stop's identifier *within its own feed*. Not unique across feeds:
-    /// several operators number their stops from scratch, so these do collide.
-    public let stopID: String
-    /// Which upstream feed this stop was sourced from.
-    public let feedID: String
+    /// Unique across every feed. Stop identifiers are only unique *within* a feed,
+    /// so this is qualified by whoever published it.
+    public let id: String
     public let name: String
     public let latitude: Double
     public let longitude: Double
-    public let kind: StopPlaceKind
-    /// The `stopID` of the station this stop belongs to, when it is a child.
-    /// Always refers to a stop in the same feed.
-    public let parentStationID: String?
+    public let kind: Kind
 
     public init(
-        stopID: String,
-        feedID: String,
+        id: String,
         name: String,
         latitude: Double,
         longitude: Double,
-        kind: StopPlaceKind,
-        parentStationID: String?
+        kind: Kind
     ) {
-        self.stopID = stopID
-        self.feedID = feedID
+        self.id = id
         self.name = name
         self.latitude = latitude
         self.longitude = longitude
         self.kind = kind
-        self.parentStationID = parentStationID
     }
-
-    /// Unique across every feed, unlike ``stopID`` on its own.
-    public var id: String { "\(feedID):\(stopID)" }
 
     public var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+public extension StopPlace {
+
+    /// How a stop place is structured, which follows from who published it.
+    ///
+    /// An enum so that adding an operator fails to compile until it is handled
+    /// everywhere, and so "a bus stop with no platforms" cannot be expressed: bus
+    /// and ferry take exactly one platform rather than an array.
+    ///
+    /// The array cases are never empty in practice — every station has platforms,
+    /// subway exactly two and PATH two to four, none with zero.
+    enum Kind: Sendable, Hashable {
+        /// The stop *is* the boarding point; nothing sits above it.
+        case bus(Platform)
+        case ferry(Platform)
+        /// A station whose platforms are its directions.
+        case subway([Platform])
+        case path([Platform])
+    }
+}
+
+public extension StopPlace.Kind {
+
+    /// Uniform access for callers that do not care how a stop is structured.
+    var platforms: [Platform] {
+        switch self {
+        case let .bus(platform), let .ferry(platform):
+            [platform]
+        case let .subway(platforms), let .path(platforms):
+            platforms
+        }
+    }
+}
+
+/// A direction within a stop place, and what lines attach to.
+///
+/// Carries neither coordinate nor name, which is not an omission: all 1,021
+/// platforms in the NYC feeds sit at their station's *exact* coordinate and carry a
+/// name byte-identical to it. Storing either would be inventing data.
+///
+/// The type earns its place because every one of the 565,093 `stop_times`
+/// references points at a platform and none at a station. `101N` means "the
+/// northbound side", which is where lines and departures will hang once that join
+/// exists.
+public struct Platform: Sendable, Hashable, Identifiable {
+
+    public let id: String
+
+    public init(id: String) {
+        self.id = id
     }
 }
