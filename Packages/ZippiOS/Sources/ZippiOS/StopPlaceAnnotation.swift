@@ -15,17 +15,22 @@ struct StopPlaceAnnotation: View {
     private var tint: Color { stopPlace.kind.tint }
 
     var body: some View {
-        // MEASUREMENT — temporary, remove with AnnotationRenderCounter.
-        let _ = AnnotationRenderCounter.record(detail)
-
-        switch detail {
-        case .hidden:
-            EmptyView()
-        case .dot:
-            dot
-        case .label:
-            plate
+        Group {
+            switch detail {
+            case .hidden:
+                EmptyView()
+            case .dot:
+                dot
+            case .label:
+                plate
+            }
         }
+        // Animate here, on the annotation, rather than wrapping the data change in
+        // `withAnimation`. Measured: this stays at one body evaluation per
+        // annotation, while animating the data keeps departing annotations alive
+        // for the duration — and since `detail` is shared, a hundred outgoing dots
+        // each draw themselves as full plates on the way out, six times the work.
+        .animation(.snappy(duration: 0.22), value: detail)
     }
 
     /// A duo-toned dot: the mode's colour, ringed so it stays legible against both
@@ -37,6 +42,7 @@ struct StopPlaceAnnotation: View {
             .overlay {
                 Circle().strokeBorder(.background, lineWidth: 2.5)
             }
+            .transition(.scale(scale: 0.4).combined(with: .opacity))
     }
 
     private var plate: some View {
@@ -64,6 +70,7 @@ struct StopPlaceAnnotation: View {
                 .strokeBorder(tint.opacity(0.35), lineWidth: 1)
         }
         .fixedSize()
+        .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
     }
 }
 

@@ -69,7 +69,6 @@ final class MapViewModel: ObservableObject {
         viewportSize: CGSize
     ) {
         let detail = Self.annotationDetail(forCameraDistance: distance)
-        logger.debug("camera \(Int(distance))m -> \(String(describing: detail), privacy: .public)")
 
         guard detail != .hidden else {
             visibleStopsTask?.cancel()
@@ -89,6 +88,7 @@ private extension MapViewModel {
     /// Long enough that a flick through the city issues one query rather than
     /// one per frame, short enough to feel immediate when the map settles.
     static let cameraSettleDelay = Duration.milliseconds(150)
+
 
     func loadVisibleStopPlaces(
         in region: MKCoordinateRegion,
@@ -112,9 +112,6 @@ private extension MapViewModel {
             }
             guard !Task.isCancelled, let self else { return }
 
-            // MEASUREMENT — temporary scaffolding, remove once caching is decided.
-            let clock = ContinuousClock()
-            let decimateStarted = clock.now
             let decimated = Self.decimated(
                 stopPlaces,
                 in: region,
@@ -122,7 +119,6 @@ private extension MapViewModel {
                 minimumSpacing: Self.footprint(for: detail),
                 viewportSize: viewportSize
             )
-            let decimateFinished = clock.now
 
             // Detail and contents move together. Applying the detail change
             // early would briefly render a dot-sized crowd as full plates, which
@@ -132,30 +128,8 @@ private extension MapViewModel {
             }
             // Re-assigning an identical list makes SwiftUI diff every annotation
             // for no visual change.
-            guard decimated.map(\.id) != self.visibleStopPlaces.map(\.id) else {
-                print("SWTOR unchanged set, skipped redraw")
-                return
-            }
-
-            _ = AnnotationRenderCounter.drain()
-            let handoff = clock.now
+            guard decimated.map(\.id) != self.visibleStopPlaces.map(\.id) else { return }
             self.visibleStopPlaces = decimated
-
-            print("""
-                SWTOR decimate=\(decimateStarted.duration(to: decimateFinished).milliseconds)ms \
-                in=\(stopPlaces.count) out=\(decimated.count) detail=\(detail)
-                """)
-
-            // SwiftUI builds annotation bodies after this assignment returns, so
-            // the count is only meaningful once the run loop has drained.
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                let built = AnnotationRenderCounter.drain()
-                print("""
-                    SWTOR bodiesBuilt dots=\(built.dots) labels=\(built.labels) \
-                    sinceHandoff=\(handoff.duration(to: ContinuousClock().now).milliseconds)ms
-                    """)
-            }
         }
     }
 }

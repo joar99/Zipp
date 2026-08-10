@@ -215,6 +215,16 @@ Three representations, deliberately:
 hierarchy on read. Storing the tree instead would fight both SwiftData and the
 incremental merge.
 
+Two SwiftData traps already hit:
+
+- **`#Predicate` will not take a force-unwrapped optional or membership in a
+  captured `Set`.** It compiles and then throws at runtime, and because the caller
+  used `try?` the map simply drew nothing while the store was perfectly fine. Fetch
+  broadly and filter in Swift instead.
+- **Platforms are cached in memory** (`platformCache`) because every read needs them
+  and there are only 1,021 in total. Invalidated solely by a refresh that changed
+  rows.
+
 Records rather than `@Model` instances cross boundaries because SwiftData models
 stay bound to the `ModelContext` that created them.
 
@@ -256,7 +266,13 @@ handled upstream instead:
 
 - **Grid decimation** anchored to *absolute* coordinates, not the viewport, so
   panning does not reshuffle which stop wins a cell. Ties break deterministically
-  (stations first, then by id) so the selection is stable frame to frame.
+  (rail, then ferry, then bus, then by id) so the selection is stable frame to
+  frame.
+- **Cell size is the larger of two constraints**: enough cells to fill the render
+  budget, *and* at least the annotation's own footprint converted from points into
+  degrees. Budget alone is not enough — 60 plates over a phone screen yields ~80 pt
+  cells for annotations ~190 pt wide, so neighbours overlap by construction. This
+  is why `MapView` passes its size down via `GeometryReader`.
 - **Per-detail budgets**: 250 dots, 60 plates. A plate lays out text and covers far
   more area, so they cannot share a budget.
 - Camera changes are debounced 150 ms with the in-flight query cancelled.
@@ -265,3 +281,38 @@ Annotation content must stay cheap. **No materials, no shadows, no blurs**: a
 material re-blurs its backdrop every frame the map moves, which at hundreds of
 annotations was the single largest cost on screen. Detail level and contents are
 applied together so a dot-sized crowd is never briefly rendered as plates.
+
+### Animate the annotation, never the data
+
+`.animation(_:value:)` on `StopPlaceAnnotation` is correct. Wrapping the
+`visibleStopPlaces` assignment in `withAnimation` is **not**, and the difference was
+measured rather than argued:
+
+| | `withAnimation` | `.animation(value:)` |
+|---|---|---|
+| bodies built for 22 annotations | 143 | 22 |
+| worst frame | ~108 ms | ~16–46 ms |
+
+Animating the data keeps departing annotations alive for the duration, and since
+`annotationDetail` is shared they render in the *new* detail on the way out — a
+hundred outgoing dots each drawing themselves as a full plate before vanishing.
+
+The transition animation was removed once for being "laggy as hell" and later
+restored unchanged, after the real causes were fixed: the platform-lookup tax
+below, blur materials, and a 400-annotation budget at both detail levels. It costs
+almost nothing on its own.
+
+### Things that looked like the bottleneck and were not
+
+Measured with `CADisplayLink` frame-drop counts and stage timings, both since
+removed:
+
+- **Rasterising annotations to cached `UIImage`s** (the approach used in a sibling
+  UIKit app) would have saved microseconds. SwiftUI already reuses annotations
+  across a settle — 131 shown, 49 built — so construction was never the cost.
+- **The actual cost was one line of my own**: `platformsByParentID()` re-fetched all
+  1,021 platform rows on *every* query, ~30 ms regardless of whether the caller
+  wanted 13 stops or 509. It is now held in memory and invalidated only by a
+  refresh that changed rows. Assembly went from ~30 ms to ~0.2 ms.
+
+Do not reach for render-level optimisation here before timing the data path.

@@ -71,21 +71,7 @@ public extension StopPlaceRepository {
             }
         )
         descriptor.fetchLimit = limit
-
-        // MEASUREMENT — temporary, remove once the caching question is settled.
-        let clock = ContinuousClock()
-        let started = clock.now
-        let records = try modelContext.fetch(descriptor).map(\.record)
-        let fetched = clock.now
-        let assembled = try assemble(records)
-        let finished = clock.now
-
-        print("""
-            SWTOR fetch=\(started.duration(to: fetched).milliseconds)ms \
-            assemble=\(fetched.duration(to: finished).milliseconds)ms \
-            rows=\(records.count) places=\(assembled.count)
-            """)
-        return assembled
+        return try assemble(modelContext.fetch(descriptor).map(\.record))
     }
 
     func stopPlace(id: String) throws -> StopPlace? {
@@ -119,12 +105,7 @@ private extension StopPlaceRepository {
     /// Platforms are fetched for all the given rows in one query rather than per
     /// stop, since the map asks for hundreds at a time.
     func assemble(_ records: [StopPlaceRecord]) throws -> [StopPlace] {
-        // MEASUREMENT — temporary. The platform lookup fetches every platform row
-        // in the dataset on each call, which is the prime suspect for settle lag.
-        let clock = ContinuousClock()
-        let started = clock.now
         let platformsByParent = try platformsByParentID()
-        print("SWTOR   platformLookup=\(started.duration(to: clock.now).milliseconds)ms stations=\(platformsByParent.count)")
 
         return records.compactMap { record in
             let kind = StopPlace.Kind.make(
