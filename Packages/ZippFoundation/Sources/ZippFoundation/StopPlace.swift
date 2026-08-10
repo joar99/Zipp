@@ -46,9 +46,14 @@ public struct StopPlace: Sendable, Hashable, Identifiable {
 
 public extension StopPlace {
 
-    /// How a stop place is structured, which follows from who published it.
+    /// What a stop place is, and how it is structured.
     ///
-    /// An enum so that adding an operator fails to compile until it is handled
+    /// One case per ``TransportMode``, read off the `route_type` the operators
+    /// publish and off nothing else — in particular *not* off which feed a stop
+    /// arrived in. See the mode discussion in CLAUDE.md for why the feed was
+    /// abandoned as a source despite being right slightly more often.
+    ///
+    /// An enum so that adding a mode fails to compile until it is handled
     /// everywhere, and so "a bus stop with no platforms" cannot be expressed: bus
     /// and ferry take exactly one platform rather than an array.
     ///
@@ -60,7 +65,9 @@ public extension StopPlace {
         case ferry(Platform)
         /// A station whose platforms are its directions.
         case subway([Platform])
-        case path([Platform])
+        /// PATH and the Staten Island Railway, which share a `route_type` and are
+        /// therefore one thing as far as the published data is concerned.
+        case rail([Platform])
     }
 }
 
@@ -71,7 +78,7 @@ public extension StopPlace.Kind {
         switch self {
         case let .bus(platform), let .ferry(platform):
             [platform]
-        case let .subway(platforms), let .path(platforms):
+        case let .subway(platforms), let .rail(platforms):
             platforms
         }
     }

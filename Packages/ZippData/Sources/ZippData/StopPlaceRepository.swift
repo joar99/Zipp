@@ -107,12 +107,17 @@ private extension StopPlaceRepository {
     ///
     /// Platforms are fetched for all the given rows in one query rather than per
     /// stop, since the map asks for hundreds at a time.
+    ///
+    /// A stop whose mode cannot be read is dropped. That means exactly one thing: no
+    /// scheduled trip calls there, so the feeds state no `route_type` for it and we
+    /// decline to invent one. Counted rather than logged per stop, because this runs
+    /// on every map query.
     func assemble(_ records: [StopPlaceRecord]) throws -> [StopPlace] {
         let platformsByParent = try platformsByParentID()
+        var unserved = 0
 
-        return records.compactMap { record in
+        let stopPlaces = records.compactMap { record -> StopPlace? in
             let kind = StopPlace.Kind.make(
-                feedID: record.feedID,
                 // Bus and ferry have no station layer, so the stop is its own
                 // single platform — and its own line lookup key.
                 ownPlatform: Platform(
@@ -122,9 +127,7 @@ private extension StopPlaceRepository {
                 childPlatforms: platformsByParent[record.id] ?? []
             )
             guard let kind else {
-                // Only reachable if a feed is added to the catalogue without
-                // teaching `Kind` about it. Skipping beats guessing a mode.
-                logger.error("Unrecognised feed \(record.feedID, privacy: .public); skipping stop \(record.id, privacy: .public)")
+                unserved += 1
                 return nil
             }
             return StopPlace(
@@ -135,6 +138,11 @@ private extension StopPlaceRepository {
                 kind: kind
             )
         }
+
+        if unserved > 0 {
+            logger.debug("Dropped \(unserved) of \(records.count) stops with no scheduled service")
+        }
+        return stopPlaces
     }
 
     /// Every platform row, keyed by its parent's qualified id.

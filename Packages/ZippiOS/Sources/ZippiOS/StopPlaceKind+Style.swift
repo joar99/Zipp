@@ -15,7 +15,7 @@ extension StopPlace.Kind {
         case .subway: Color(red: 0.00, green: 0.38, blue: 1.00)
         case .bus: Color(red: 1.00, green: 0.45, blue: 0.00)
         case .ferry: Color(red: 0.00, green: 0.72, blue: 0.72)
-        case .path: Color(red: 0.90, green: 0.10, blue: 0.55)
+        case .rail: Color(red: 0.90, green: 0.10, blue: 0.55)
         }
     }
 
@@ -24,7 +24,7 @@ extension StopPlace.Kind {
         case .subway: "tram.fill.tunnel"
         case .bus: "bus.fill"
         case .ferry: "ferry.fill"
-        case .path: "train.side.front.car"
+        case .rail: "train.side.front.car"
         }
     }
 }

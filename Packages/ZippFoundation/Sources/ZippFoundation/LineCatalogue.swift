@@ -54,6 +54,9 @@ private extension BundledLineCatalogue {
             let n: String
             let c: String
             let l: String
+            /// `route_type`, kept as the raw integer so an unrecognised one survives
+            /// decoding and is dropped deliberately rather than failing the whole file.
+            let t: Int
         }
         let lines: [String: Route]
         let platforms: [String: [String]]
@@ -83,7 +86,8 @@ private extension BundledLineCatalogue {
                     id: entry.key,
                     name: entry.value.n,
                     longName: entry.value.l,
-                    colorHex: entry.value.c
+                    colorHex: entry.value.c,
+                    mode: TransportMode(rawValue: entry.value.t)
                 )
             }
             logger.info("Loaded \(storage.lines.count) lines across \(storage.platforms.count) platforms")

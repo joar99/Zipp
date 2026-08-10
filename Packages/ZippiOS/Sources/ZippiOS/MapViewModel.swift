@@ -379,7 +379,7 @@ private extension MapViewModel {
 
     static func rank(_ kind: StopPlace.Kind) -> Int {
         switch kind {
-        case .subway, .path: 2
+        case .subway, .rail: 2
         case .ferry: 1
         case .bus: 0
         }

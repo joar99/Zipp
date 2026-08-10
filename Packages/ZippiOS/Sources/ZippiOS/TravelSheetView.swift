@@ -79,7 +79,7 @@ private struct StopPlaceDetail: View {
         switch stopPlace.kind {
         case .bus: "Bus stop"
         case .ferry: "Ferry landing"
-        case .subway, .path:
+        case .subway, .rail:
             platforms.count == 1 ? "1 platform" : "\(platforms.count) platforms"
         }
     }
@@ -187,9 +187,9 @@ private struct LineDeparturesRow: View {
 private extension [Line] {
     /// The real 1/2/3 identifiers and MTA's published red.
     static let previewNumbered: [Line] = [
-        Line(id: "subway:1", name: "1", longName: "Broadway - 7 Avenue Local", colorHex: "D82233"),
-        Line(id: "subway:2", name: "2", longName: "7 Avenue Express", colorHex: "D82233"),
-        Line(id: "subway:3", name: "3", longName: "7 Avenue Express", colorHex: "D82233"),
+        Line(id: "subway:1", name: "1", longName: "Broadway - 7 Avenue Local", colorHex: "D82233", mode: .subway),
+        Line(id: "subway:2", name: "2", longName: "7 Avenue Express", colorHex: "D82233", mode: .subway),
+        Line(id: "subway:3", name: "3", longName: "7 Avenue Express", colorHex: "D82233", mode: .subway),
     ]
 }
 

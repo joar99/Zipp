@@ -16,11 +16,25 @@ public struct Line: Sendable, Hashable, Identifiable {
     public let longName: String
     /// `RRGGBB`, as published. MTA supplies official colours for every route.
     public let colorHex: String
+    /// What this line is, from its `route_type`. The only statement of mode anywhere
+    /// in the feeds, and therefore the sole input to ``StopPlace/Kind``.
+    ///
+    /// `nil` where a publisher used a `route_type` outside the four NYC uses. None do
+    /// today, but the value is theirs to change, and a stop whose mode we cannot read
+    /// is dropped rather than guessed at.
+    public let mode: TransportMode?
 
-    public init(id: String, name: String, longName: String, colorHex: String) {
+    public init(
+        id: String,
+        name: String,
+        longName: String,
+        colorHex: String,
+        mode: TransportMode?
+    ) {
         self.id = id
         self.name = name
         self.longName = longName
         self.colorHex = colorHex
+        self.mode = mode
     }
 }

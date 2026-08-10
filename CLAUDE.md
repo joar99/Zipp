@@ -75,14 +75,51 @@ Everything here was verified against live data. Re-verify before contradicting.
 ### Modes are one-per-stop
 
 A full `stop_times → trips → routes` join over the ferry, PATH, subway and a bus
-feed found **zero stops serving more than one `route_type`**. Even the NYC Ferry
-feed — which contains two bus routes for its shuttle service — puts those on
-different stop IDs than the ferry landings.
+feed found **zero stops serving more than one `route_type`**. Re-verified against
+the generated catalogue once every feed was joined: **0 of 15,405 platforms** serve
+two. Even the NYC Ferry feed — which contains two bus routes for its shuttle
+service — puts those on different stop IDs than the ferry landings.
 
 There is also **no ID overlap between rail and bus** (1,552 rail IDs, 13,370 bus
 IDs, zero shared).
 
-So a stop place has exactly one mode. `StopPlace.Kind` is singular, not a set.
+So a stop place has exactly one mode. `StopPlace.Kind` is singular, not a set, and
+the mode may be read from any one line calling there without reconciling the rest.
+
+### Mode comes from the label, not from the feed
+
+`Kind` is derived from the operators' published `route_type` and from **nothing
+else**. It used to be inferred from which archive a stop arrived in. Both sources
+are wrong sometimes, and the feed is actually wrong *less* often:
+
+| | wrong | which stops |
+|---|---|---|
+| feed inference | 25 | NYC Ferry's two Rockaway shuttle *buses*, drawn as ferry landings |
+| published label | 42 | Staten Island Railway, which calls itself commuter rail but is a metro |
+
+They disagree on **67 of 15,405** stops; on the other 15,338 they agree exactly.
+
+The label wins anyway, and the reason is not accuracy:
+
+- Inference needs a hand-written rule per feed, kept forever, and a tenth feed
+  arrives with no rule at all. The label costs nothing when an operator is added.
+- Where inference is right it is right *by accident* — the Staten Island Railway
+  reads as subway only because MTA happens to ship it in the subway archive.
+- A wrong label is the operator's to fix, and fixable. A wrong inference is ours.
+
+Mixing them — label except for these two known cases — was considered and
+rejected: that is a heuristic table that grows every time a feed changes.
+
+**The price, accepted knowingly:** the Staten Island Railway renders as rail rather
+than subway.
+
+`route_type` 2 is *Rail*, and both PATH and the Staten Island Railway publish it.
+Nothing in the data separates them, so `Kind.rail` covers both and the old
+`Kind.path` is gone. They are a state apart and never share a screen.
+
+**A stop with no scheduled service now has no mode**, and the repository drops it
+rather than inventing one — the count is logged per query at debug level. This is
+the one behaviour the old feed-based fallback used to cover.
 
 ### Platforms have no location and no name of their own
 
@@ -179,9 +216,13 @@ but only 106 m from **Rector St**, the one it is named after.
 
 ```
 StopPlace          what a rider walks to and sees departures from — the map pin
- └─ Kind           bus(Platform) | ferry(Platform) | subway([Platform]) | path([Platform])
+ └─ Kind           bus(Platform) | ferry(Platform) | subway([Platform]) | rail([Platform])
      └─ Platform   a direction within the stop; owns the lines
 ```
+
+`Kind` has one case per `route_type` the feeds publish, and `rail` is PATH *and*
+the Staten Island Railway because both publish the same one. See "Mode comes from
+the label, not from the feed" above.
 
 `StopPlace` is a **station** for subway/PATH and a **boarding point** for
 bus/ferry. That asymmetry is the data's, not ours: buses have no station layer.
@@ -200,6 +241,11 @@ none — so `subway([Platform])` never receives an empty array.
 
 `Kind` replaces the earlier `Set<TransportMode>`. Since no stop is multi-modal, a
 set was modelling a possibility that does not exist.
+
+`TransportMode` exists again, but as something else entirely: the four `route_type`
+values the feeds publish, carried on `Line`. It is the *input* to `Kind` rather than
+a replacement for it — `Kind` adds the platform structure that a bare mode cannot
+express.
 
 ### Facade vs storage
 
@@ -234,24 +280,29 @@ stay bound to the `ModelContext` that created them.
 
 Roughly in order of value.
 
-1. **Lines.** Requires the `stop_times → trips → routes` join — 416 MB uncompressed
-   across the feeds, which is why it has been deferred. Do it **at build time** and
-   ship the derived `platform → [line]` mapping (a few KB) in the bundle; the
-   weekly refresh keeps handling stops only.
-   `routes.txt` is 10 KB and already carries official names and colours
-   (`A/C/E` = `#0062CF`), so that part needs no join.
-2. **Derive `Kind` from `route_type`** instead of from `feedID`. Falls out of (1)
-   for free and fixes the two known inaccuracies: Staten Island Railway reads as
-   subway (it ships inside the subway feed), and NYC Ferry's shuttle-bus stops read
-   as ferry.
-3. **Deduplicate the 686 repeated bus stops.** Exact ID match, no heuristics.
-4. **Departures.** Live, not offline — the user's call. Note the asymmetry: MTA has
+1. **Deduplicate the 686 repeated bus stops.** Exact ID match, no heuristics.
+2. **Departures.** Live, not offline — the user's call. Note the asymmetry: MTA has
    no per-stop departures endpoint for subway (GTFS-RT is a protobuf dump of the
    whole system that you filter client-side), while buses expose SIRI
    `StopMonitoring`, which genuinely is per-stop. Both need an API key.
-5. **Seed the store at build time** so first launch is instant and needs no network.
-6. **Platform direction.** `101N`/`101S` encode it in the ID suffix, but it is only
-   meaningful alongside lines, so it belongs with (1).
+   This is the last mock left in the app.
+3. **Seed the store at build time** so first launch is instant and needs no network.
+4. **Platform direction.** `101N`/`101S` encode it in the ID suffix. Currently
+   mocked off that suffix, which is why a bus stop reads "All departures".
+
+**Done:**
+
+- **Lines.** `Tools/generate_lines.py` performs the `stop_times → trips → routes`
+  join at build time — 416 MB uncompressed, far too much to ship — and writes an
+  834 KB `Lines.json` of 390 lines across 15,405 platforms. The weekly refresh still
+  handles stops only. Regenerate when the feeds change materially.
+- **`Kind` from `route_type`.** Free once (1) existed, because the generator was
+  already writing `route_type` into the catalogue. Argued at length under "Mode
+  comes from the label, not from the feed".
+
+Also known, not worth its own item: `stopPlace(id:)` has no caller. If one appears,
+give it the same `parentStationID == nil` filter `stopPlaces(in:)` has, or it will
+happily return a station with no platforms.
 
 Deliberately **not** planned: station complexes, cross-mode merging, offline
 timetables, entrances. Each is argued above.
