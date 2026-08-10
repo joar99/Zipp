@@ -17,7 +17,15 @@ struct MapView: View {
         Map(position: $viewModel.cameraPosition) {
             ForEach(viewModel.visibleStopPlaces) { stopPlace in
                 Annotation(coordinate: stopPlace.coordinate) {
-                    StopPlaceAnnotation(stopPlace: stopPlace, detail: viewModel.annotationDetail)
+                    StopPlaceAnnotation(
+                        stopPlace: stopPlace,
+                        detail: viewModel.annotationDetail,
+                        isSelected: stopPlace.id == viewModel.selectedStopPlaceID
+                    )
+                    // A dot is 11pt across, which is a miserable tap target, so
+                    // the hit area is padded well beyond what is drawn.
+                    .contentShape(.rect.inset(by: -12))
+                    .onTapGesture { viewModel.userDidTapStopPlace(stopPlace) }
                 } label: {
                     Text(stopPlace.name)
                 }
@@ -49,7 +57,9 @@ struct MapView: View {
             )
         }
         .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
+            // Not zero: at zero, tapping an annotation registers as a drag and
+            // collapses the sheet a frame before the selection expands it again.
+            DragGesture(minimumDistance: 10)
                 .onChanged { _ in
                     guard !isDraggingMap else { return }
                     isDraggingMap = true

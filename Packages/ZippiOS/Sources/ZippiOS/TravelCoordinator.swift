@@ -1,4 +1,5 @@
 import SwiftUI
+import ZippFoundation
 import ZippNavigation
 
 @MainActor
@@ -35,11 +36,26 @@ final class TravelCoordinator: CoordinatorProtocol {
 }
 
 extension TravelCoordinator: MapViewModelDelegate {
+
     func mapViewModelDidBeginDragging(_ viewModel: MapViewModel) {
         navigationController.presentedModalDetent = Self.collapsedDetent
+    }
+
+    /// Selecting a stop is three things at once — highlight it, fly to it, and put
+    /// its detail in the sheet. None of the three belongs to either view model
+    /// alone, which is precisely why the coordinator owns the sequence.
+    func mapViewModel(_ viewModel: MapViewModel, didSelect stopPlace: StopPlace) {
+        viewModel.select(stopPlace)
+        travelSheetViewModel.show(stopPlace)
+        navigationController.presentedModalDetent = .medium
     }
 }
 
 extension TravelCoordinator: TravelSheetViewModelDelegate {
-    
+
+    func travelSheetViewModelDidRequestClose(_ viewModel: TravelSheetViewModel) {
+        viewModel.clear()
+        mapViewModel.deselect()
+        navigationController.presentedModalDetent = Self.collapsedDetent
+    }
 }

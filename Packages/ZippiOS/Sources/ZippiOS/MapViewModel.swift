@@ -10,6 +10,9 @@ private let logger = Logger(subsystem: "no.jonas.Zipp", category: "MapViewModel"
 @MainActor
 protocol MapViewModelDelegate: AnyObject {
     func mapViewModelDidBeginDragging(_ viewModel: MapViewModel)
+    /// The rider tapped a stop. Reporting rather than acting: what selection means
+    /// for the sheet and the camera is the coordinator's call, not the map's.
+    func mapViewModel(_ viewModel: MapViewModel, didSelect stopPlace: StopPlace)
 }
 
 @MainActor
@@ -33,6 +36,7 @@ final class MapViewModel: ObservableObject {
     @Published private(set) var mapHeading: CLLocationDirection = 0
     @Published private(set) var visibleStopPlaces: [StopPlace] = []
     @Published private(set) var annotationDetail: AnnotationDetail = .hidden
+    @Published private(set) var selectedStopPlaceID: String?
     @Published var cameraPosition = MapCameraPosition.automatic
 
     weak var delegate: MapViewModelDelegate?
@@ -81,6 +85,27 @@ final class MapViewModel: ObservableObject {
 
     func userDidBeginDraggingMap() {
         delegate?.mapViewModelDidBeginDragging(self)
+    }
+
+    func userDidTapStopPlace(_ stopPlace: StopPlace) {
+        delegate?.mapViewModel(self, didSelect: stopPlace)
+    }
+
+    /// Marks a stop as selected and flies the camera to it.
+    ///
+    /// The distance is chosen to land inside the `.label` threshold, so a selected
+    /// stop is always shown named rather than as an anonymous dot.
+    func select(_ stopPlace: StopPlace) {
+        selectedStopPlaceID = stopPlace.id
+        withAnimation(.easeInOut(duration: 0.45)) {
+            cameraPosition = .camera(
+                MapCamera(centerCoordinate: stopPlace.coordinate, distance: 1_400)
+            )
+        }
+    }
+
+    func deselect() {
+        selectedStopPlaceID = nil
     }
 
     func mapCameraDidChange(
@@ -135,13 +160,22 @@ private extension MapViewModel {
             }
             guard !Task.isCancelled, let self else { return }
 
-            let decimated = Self.decimated(
+            var decimated = Self.decimated(
                 stopPlaces,
                 in: region,
                 limit: Self.renderBudget(for: detail),
                 minimumSpacing: Self.footprint(for: detail),
                 viewportSize: viewportSize
             )
+
+            // Decimation is blind to selection, so a selected stop can lose its
+            // grid cell to a higher-ranked neighbour and silently vanish from the
+            // map while the sheet still describes it. Put it back.
+            if let selectedStopPlaceID,
+               !decimated.contains(where: { $0.id == selectedStopPlaceID }),
+               let selected = stopPlaces.first(where: { $0.id == selectedStopPlaceID }) {
+                decimated.append(selected)
+            }
 
             // Detail and contents move together. Applying the detail change
             // early would briefly render a dot-sized crowd as full plates, which

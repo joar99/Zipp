@@ -11,18 +11,26 @@ struct StopPlaceAnnotation: View {
 
     let stopPlace: StopPlace
     let detail: MapViewModel.AnnotationDetail
+    var isSelected = false
 
     private var tint: Color { stopPlace.kind.tint }
 
     var body: some View {
         Group {
-            switch detail {
-            case .hidden:
-                EmptyView()
-            case .dot:
-                dot
-            case .label:
-                plate
+            if isSelected {
+                // Selection ignores the zoom detail. Selecting always flies the
+                // camera close enough for a label anyway, and a selected stop
+                // rendered as an anonymous dot would be a strange thing to show.
+                selectedPlate
+            } else {
+                switch detail {
+                case .hidden:
+                    EmptyView()
+                case .dot:
+                    dot
+                case .label:
+                    plate
+                }
             }
         }
         // Animate here, on the annotation, rather than wrapping the data change in
@@ -31,6 +39,7 @@ struct StopPlaceAnnotation: View {
         // for the duration — and since `detail` is shared, a hundred outgoing dots
         // each draw themselves as full plates on the way out, six times the work.
         .animation(.snappy(duration: 0.22), value: detail)
+        .animation(.snappy(duration: 0.28), value: isSelected)
     }
 
     /// A duo-toned dot: the mode's colour, ringed so it stays legible against both
@@ -72,12 +81,40 @@ struct StopPlaceAnnotation: View {
         .fixedSize()
         .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
     }
+
+    /// The selected form: inverted, so the chosen stop reads as the subject of the
+    /// screen rather than one more option among the stops around it.
+    private var selectedPlate: some View {
+        HStack(spacing: 6) {
+            Image(systemName: stopPlace.kind.symbolName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 20, height: 20)
+                .background(.white, in: Circle())
+
+            Text(stopPlace.name)
+                .font(.system(size: 13, weight: .bold))
+                .lineLimit(1)
+                .foregroundStyle(.white)
+        }
+        .padding(.leading, 5)
+        .padding(.trailing, 11)
+        .padding(.vertical, 5)
+        .background(tint, in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 1.5)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+        .fixedSize()
+        .transition(.scale(scale: 0.7).combined(with: .opacity))
+    }
 }
 
 #Preview {
     VStack(spacing: 24) {
         StopPlaceAnnotation(stopPlace: .preview, detail: .dot)
         StopPlaceAnnotation(stopPlace: .preview, detail: .label)
+        StopPlaceAnnotation(stopPlace: .preview, detail: .label, isSelected: true)
     }
     .padding()
 }
