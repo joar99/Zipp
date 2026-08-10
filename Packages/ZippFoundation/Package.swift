@@ -8,6 +8,12 @@ let package = Package(
         .library(name: "ZippFoundation", targets: ["ZippFoundation"]),
     ],
     targets: [
-        .target(name: "ZippFoundation", dependencies: []),
+        .target(
+            name: "ZippFoundation",
+            dependencies: [],
+            // The platform-to-lines mapping, derived at build time by
+            // Tools/generate_lines.py because GTFS will not state it directly.
+            resources: [.process("Resources")]
+        ),
     ]
 )

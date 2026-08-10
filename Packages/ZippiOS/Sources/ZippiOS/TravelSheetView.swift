@@ -90,7 +90,14 @@ private struct PlatformSection: View {
 
     let platform: Platform
 
-    private var lines: [MockLine] { platform.mockLines }
+    private var lines: [Line] { platform.lines }
+
+    /// PATH names all seven of its routes "PATH", telling them apart only by colour
+    /// and terminus, so the badge alone would be useless there. Shown only when it
+    /// is actually needed to disambiguate.
+    private var needsLongNames: Bool {
+        Set(lines.map(\.name)).count < lines.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -103,10 +110,19 @@ private struct PlatformSection: View {
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
+            if lines.isEmpty {
+                Text("No scheduled service")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 14)
+            }
+
             ForEach(lines) { line in
                 LineDeparturesRow(
                     line: line,
-                    departures: platform.mockDepartures(for: line)
+                    departures: platform.mockDepartures(for: line),
+                    showsLongName: needsLongNames
                 )
                 if line.id != lines.last?.id {
                     Divider().padding(.leading, 76)
@@ -123,15 +139,16 @@ private struct PlatformSection: View {
 /// size it will need rather than grown into later.
 private struct LineDeparturesRow: View {
 
-    let line: MockLine
+    let line: Line
     let departures: [MockDeparture]
+    let showsLongName: Bool
 
     var body: some View {
         HStack(spacing: 14) {
             Text(line.name)
                 .font(.system(size: 19, weight: .heavy))
                 .foregroundStyle(.white)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 .frame(width: 44, height: 44)
                 .background(line.color, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -142,7 +159,12 @@ private struct LineDeparturesRow: View {
                     .font(.system(size: 17, weight: .semibold))
                     .monospacedDigit()
 
-                if departures.count > 1 {
+                if showsLongName, !line.longName.isEmpty {
+                    Text(line.longName)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if departures.count > 1 {
                     Text("then " + departures.dropFirst().map(\.label).joined(separator: " · "))
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
@@ -162,6 +184,15 @@ private struct LineDeparturesRow: View {
     }
 }
 
+private extension [Line] {
+    /// The real 1/2/3 identifiers and MTA's published red.
+    static let previewNumbered: [Line] = [
+        Line(id: "subway:1", name: "1", longName: "Broadway - 7 Avenue Local", colorHex: "D82233"),
+        Line(id: "subway:2", name: "2", longName: "7 Avenue Express", colorHex: "D82233"),
+        Line(id: "subway:3", name: "3", longName: "7 Avenue Express", colorHex: "D82233"),
+    ]
+}
+
 #Preview {
     let viewModel = TravelSheetViewModel()
     viewModel.show(
@@ -170,7 +201,10 @@ private struct LineDeparturesRow: View {
             name: "Times Sq-42 St",
             latitude: 40.75529,
             longitude: -73.987495,
-            kind: .subway([Platform(id: "127N"), Platform(id: "127S")])
+            kind: .subway([
+                Platform(id: "subway:127N", lines: .previewNumbered),
+                Platform(id: "subway:127S", lines: .previewNumbered),
+            ])
         )
     )
     return TravelSheetView(viewModel: viewModel)

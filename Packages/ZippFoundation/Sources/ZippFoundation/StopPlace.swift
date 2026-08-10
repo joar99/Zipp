@@ -89,9 +89,14 @@ public extension StopPlace.Kind {
 /// exists.
 public struct Platform: Sendable, Hashable, Identifiable {
 
+    /// Qualified as `feed:stop`, matching the keys the line catalogue is built on.
     public let id: String
+    /// The services calling here. Empty only where a feed publishes a platform no
+    /// scheduled trip ever visits — three exist in the subway feed.
+    public let lines: [Line]
 
-    public init(id: String) {
+    public init(id: String, lines: [Line] = []) {
         self.id = id
+        self.lines = lines
     }
 }

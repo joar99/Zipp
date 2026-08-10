@@ -22,6 +22,7 @@ public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
     public nonisolated let modelExecutor: any ModelExecutor
 
     private let service: any StopPlaceServicing
+    private let lineCatalogue: any LineCatalogueProtocol
     private let feeds: [GTFSFeed]
 
     /// Every platform in the dataset, keyed by its parent's qualified id.
@@ -35,6 +36,7 @@ public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
     public init(
         modelContainer: ModelContainer,
         service: any StopPlaceServicing = StopPlaceService(),
+        lineCatalogue: any LineCatalogueProtocol = BundledLineCatalogue(),
         feeds: [GTFSFeed] = GTFSFeed.newYorkCity
     ) {
         self.modelContainer = modelContainer
@@ -42,6 +44,7 @@ public actor StopPlaceRepository: ModelActor, StopPlaceRepositoryProtocol {
             modelContext: ModelContext(modelContainer)
         )
         self.service = service
+        self.lineCatalogue = lineCatalogue
         self.feeds = feeds
     }
 }
@@ -111,8 +114,11 @@ private extension StopPlaceRepository {
             let kind = StopPlace.Kind.make(
                 feedID: record.feedID,
                 // Bus and ferry have no station layer, so the stop is its own
-                // single platform.
-                ownPlatform: Platform(id: record.id),
+                // single platform — and its own line lookup key.
+                ownPlatform: Platform(
+                    id: record.id,
+                    lines: lineCatalogue.lines(forPlatform: record.id)
+                ),
                 childPlatforms: platformsByParent[record.id] ?? []
             )
             guard let kind else {
@@ -150,10 +156,11 @@ private extension StopPlaceRepository {
         var result: [String: [Platform]] = [:]
         for child in children {
             guard let parentStationID = child.parentStationID else { continue }
-            // Parent references only mean anything inside their own feed, so the
-            // key is qualified to avoid crossing operators that reuse identifiers.
+            // Both keys are qualified by feed: parent references only mean anything
+            // inside their own feed, and the line catalogue is keyed the same way.
+            let platformID = "\(child.feedID):\(child.stopID)"
             result["\(child.feedID):\(parentStationID)", default: []]
-                .append(Platform(id: child.stopID))
+                .append(Platform(id: platformID, lines: lineCatalogue.lines(forPlatform: platformID)))
         }
         for key in result.keys {
             result[key]?.sort { $0.id < $1.id }
