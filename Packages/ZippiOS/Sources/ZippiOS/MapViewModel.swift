@@ -41,6 +41,16 @@ final class MapViewModel: ObservableObject {
 
     weak var delegate: MapViewModelDelegate?
 
+    /// How much map height a metre of camera distance buys, measured from the map
+    /// itself rather than assumed.
+    ///
+    /// It is nowhere near 1: a camera 1,400 m away shows about 620 m of ground. The
+    /// exact figure depends on the viewport's aspect ratio and field of view, so it
+    /// differs by device and orientation — hence measuring it rather than baking in
+    /// a constant that would be wrong on an iPad. Seeded with the iPhone value so
+    /// the very first selection is already close.
+    private var visibleHeightPerCameraMetre = 0.445
+
     private let userLocationRepository: UserLocationRepositoryProtocol
     private let stopPlaceRepository: StopPlaceRepositoryProtocol
     private var visibleStopsTask: Task<Void, Never>?
@@ -93,13 +103,42 @@ final class MapViewModel: ObservableObject {
 
     /// Marks a stop as selected and flies the camera to it.
     ///
-    /// The distance is chosen to land inside the `.label` threshold, so a selected
-    /// stop is always shown named rather than as an anonymous dot.
-    func select(_ stopPlace: StopPlace) {
+    /// The distance lands inside the `.label` threshold, so a selected stop is
+    /// always shown named rather than as an anonymous dot.
+    ///
+    /// - Parameter avoidingBottomFraction: how much of the map the sheet covers.
+    ///   Centring on the stop would put it underneath the sheet, so the camera
+    ///   centre is shifted *away* from the viewer's up-direction, which raises the
+    ///   stop into the part of the map that is actually visible.
+    ///
+    ///   UIKit would do this with `setVisibleMapRect(_:edgePadding:animated:)`.
+    ///   SwiftUI's `Map` exposes no inset or padding of any kind — verified against
+    ///   the SDK — so the offset is computed by hand.
+    func select(_ stopPlace: StopPlace, avoidingBottomFraction: Double = 0) {
         selectedStopPlaceID = stopPlace.id
+
+        // Half of the covered fraction, because the shift moves the stop from the
+        // centre of the whole map to the centre of the part still showing.
+        let visibleHeight = Self.selectionCameraDistance * visibleHeightPerCameraMetre
+        let shift = visibleHeight * avoidingBottomFraction / 2
+
+        // Shift along the heading reversed, i.e. "down the screen", whatever way the
+        // map happens to be rotated. A plain latitude offset would be wrong the
+        // moment the rider turns the map.
+        let centre = Self.coordinate(
+            stopPlace.coordinate,
+            movedBy: shift,
+            bearing: mapHeading + 180
+        )
+
+
         withAnimation(.easeInOut(duration: 0.45)) {
             cameraPosition = .camera(
-                MapCamera(centerCoordinate: stopPlace.coordinate, distance: 1_400)
+                MapCamera(
+                    centerCoordinate: centre,
+                    distance: Self.selectionCameraDistance,
+                    heading: mapHeading
+                )
             )
         }
     }
@@ -115,6 +154,13 @@ final class MapViewModel: ObservableObject {
         viewportSize: CGSize
     ) {
         if mapHeading != heading { mapHeading = heading }
+
+        // Recalibrate from what the map is actually showing. Ignored at world scale,
+        // where the Mercator projection stretches a degree of latitude far enough to
+        // make the ratio meaningless.
+        if region.span.latitudeDelta < 1, distance > 0 {
+            visibleHeightPerCameraMetre = (region.span.latitudeDelta * 111_320) / distance
+        }
 
         let detail = Self.annotationDetail(forCameraDistance: distance)
 
@@ -194,6 +240,26 @@ private extension MapViewModel {
 // MARK: - Zoom thresholds
 
 private extension MapViewModel {
+
+    /// Close enough to land in `.label` detail, so a selected stop is never a dot.
+    static let selectionCameraDistance: CLLocationDistance = 1_400
+
+    /// Moves a coordinate `distance` metres along `bearing`.
+    ///
+    /// A flat-earth approximation, which is accurate far beyond the few hundred
+    /// metres this is ever asked for.
+    static func coordinate(
+        _ coordinate: CLLocationCoordinate2D,
+        movedBy distance: CLLocationDistance,
+        bearing: CLLocationDirection
+    ) -> CLLocationCoordinate2D {
+        let metresPerDegree = 111_320.0
+        let radians = bearing * .pi / 180
+        let latitude = coordinate.latitude + (distance * cos(radians)) / metresPerDegree
+        let longitude = coordinate.longitude
+            + (distance * sin(radians)) / (metresPerDegree * cos(coordinate.latitude * .pi / 180))
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
 
     static func annotationDetail(forCameraDistance distance: CLLocationDistance) -> AnnotationDetail {
         switch distance {
