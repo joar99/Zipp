@@ -26,6 +26,11 @@ final class MapViewModel: ObservableObject {
     }
 
     @Published private(set) var userLocation: CLLocationCoordinate2D?
+    /// Degrees clockwise from north, as reported by the compass.
+    @Published private(set) var userHeading: CLLocationDirection?
+    /// Which way the *map* is facing, which is not always north — the rider can
+    /// rotate it.
+    @Published private(set) var mapHeading: CLLocationDirection = 0
     @Published private(set) var visibleStopPlaces: [StopPlace] = []
     @Published private(set) var annotationDetail: AnnotationDetail = .hidden
     @Published var cameraPosition = MapCameraPosition.automatic
@@ -57,6 +62,21 @@ final class MapViewModel: ObservableObject {
                 }
             }
         }
+        Task {
+            for await heading in userLocationRepository.headingUpdates {
+                userHeading = heading
+            }
+        }
+    }
+
+    /// How far to rotate the heading cone on screen.
+    ///
+    /// The compass reports degrees from north, but annotations stay screen-aligned
+    /// while the map underneath can be rotated, so the map's own heading has to be
+    /// subtracted or the cone points somewhere the rider is not facing.
+    var userHeadingRotation: Angle? {
+        guard let userHeading else { return nil }
+        return .degrees(userHeading - mapHeading)
     }
 
     func userDidBeginDraggingMap() {
@@ -66,8 +86,11 @@ final class MapViewModel: ObservableObject {
     func mapCameraDidChange(
         region: MKCoordinateRegion,
         distance: CLLocationDistance,
+        heading: CLLocationDirection,
         viewportSize: CGSize
     ) {
+        if mapHeading != heading { mapHeading = heading }
+
         let detail = Self.annotationDetail(forCameraDistance: distance)
 
         guard detail != .hidden else {
